@@ -18,7 +18,7 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
   const validHistory = firstUserIndex !== -1 ? processedHistory.slice(firstUserIndex) : [];
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3-flash-preview',
     contents: [...validHistory, { role: 'user', parts: [{ text: query }] }],
     config: {
       tools: [{ googleSearch: {} }],
@@ -47,7 +47,7 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
 export const getSalesFeedback = async (transcript: string, persona: any) => {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3-pro-preview',
     contents: [
       {
         role: 'user',
