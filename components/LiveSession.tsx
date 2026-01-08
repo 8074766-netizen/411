@@ -16,6 +16,8 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   const [showScript, setShowScript] = useState(false);
   const [showLeadInfo, setShowLeadInfo] = useState(true);
   const [transcription, setTranscription] = useState<string[]>([]);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const transcriptRef = useRef<string[]>([]);
   const audioContextsRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
@@ -64,6 +66,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
             onopen: async () => {
               console.log('Live session connected');
               setIsActive(true);
+              setConnectionError(null);
 
               if (inputCtx.state === 'suspended') await inputCtx.resume();
               if (outputCtx.state === 'suspended') await outputCtx.resume();
@@ -72,17 +75,23 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
 
               scriptProcessor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+
+                // Calculate RMS level for UI feedback
+                let sum = 0;
+                for (let i = 0; i < inputData.length; i++) {
+                  sum += inputData[i] * inputData[i];
+                }
+                const level = Math.sqrt(sum / inputData.length);
+                if (isMounted) setAudioLevel(level);
+
                 const currentSession = sessionRef.current;
                 if (!currentSession) return;
 
-                const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
 
-                // Send as simple object array (supported shorthand for Blobs in some SDK versions)
-                // or wrap explicitly as Part if needed. Trying explicit first for robustness.
-                currentSession.sendRealtimeInput([{
-                  inlineData: pcmBlob
-                }]);
+                // Trying the most direct format which works in latest @google/genai
+                currentSession.sendRealtimeInput([pcmBlob]);
               };
 
               source.connect(scriptProcessor);
@@ -136,11 +145,14 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
             },
             onerror: (e) => {
               console.error('Live session error:', e);
-              setIsActive(false);
+              if (isMounted) {
+                setIsActive(false);
+                setConnectionError("Connection to AI failed. Please check your API key and internet.");
+              }
             },
             onclose: (e) => {
               console.log('Live session closed', e);
-              setIsActive(false);
+              if (isMounted) setIsActive(false);
             },
           },
           config: {
@@ -154,33 +166,26 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
             },
             outputAudioTranscription: {},
             inputAudioTranscription: {},
-            systemInstruction: `You are acting as ${persona.name}, ${persona.role} at ${persona.company}. 
+            systemInstruction: `You are acting as ${persona.name}, ${persona.role} at ${persona.company}.
             Personality: ${persona.personality}.
-            
-            YOUR BUSINESS INFORMATION (Rep must confirm this in Step 3):
-            - Address: ${persona.address}
-            - City: ${persona.city}
-            - Province: ${persona.province}
-            - Postal Code: ${persona.postalCode}
+
+            YOUR BUSINESS INFORMATION:
+            - Address: ${persona.address}, ${persona.city}, ${persona.province}
             - Phone: ${persona.phone}
-            
-            BEHAVIOR GUIDELINES FOR TRAINING:
-            - Step 3 (Confirmation): If the rep asks to confirm your details, verify they are correct based on the list above.
-            - If the rep FAILS to ask "Are you authorized to confirm info as well as purchase?" within the first minute, be very difficult when they mention the $775 price later. Say things like "Wait, I didn't say I was buying anything" or "I'm just the manager, I can't authorize this."
-            - If they DO ask for authorization early, be more cooperative.
-            - Raise these specific objections based on the manual: ${persona.objections.join(', ')}.
-            - Use the "Complimentary listing" background: "I already have a free listing, why should I pay?"
-            - If they offer the 10% credit card discount, show interest.
-            - If they use the ARC method (Acknowledge, Reaffirm, Close), you should eventually give in and agree to the invoice.
-            
-            Context for 411 SMART SEARCH.CA: ${COMPANY_MANUAL}.`,
+
+            DIRECTIONS:
+            1. Respond naturally and promptly to audio input.
+            2. If the user greets you, reply as the persona.
+            3. Follow the sales training guidelines for objections and ARC method.
+            4. Context: ${COMPANY_MANUAL}.`,
           },
         });
 
         session = await sessionPromise;
         sessionRef.current = session;
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to start session:", err);
+        if (isMounted) setConnectionError(err.message || "Failed to access microphone.");
       }
     };
 
@@ -275,20 +280,56 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-slate-900/0 via-orange-500/5 to-slate-900/0 pointer-events-none"></div>
 
+          {connectionError && (
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 backdrop-blur-md text-white px-6 py-3 rounded-2xl border border-red-400 shadow-xl animate-in fade-in slide-in-from-top-4 flex items-center space-x-3">
+              <span className="text-xl">⚠️</span>
+              <div className="flex flex-col">
+                <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Session Error</p>
+                <p className="text-sm font-bold">{connectionError}</p>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="ml-4 bg-white text-red-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-orange-50 active:scale-95 transition-all"
+              >
+                Reconnect
+              </button>
+            </div>
+          )}
+
           <div className="relative flex items-center justify-center">
+            {/* Audio Level Ring */}
+            <div
+              className="absolute rounded-full border-4 border-orange-500/30 transition-all duration-75"
+              style={{
+                width: `${160 + (audioLevel * 400)}px`,
+                height: `${160 + (audioLevel * 400)}px`,
+                opacity: isActive ? 1 : 0
+              }}
+            ></div>
+
             <div className="absolute w-80 h-80 rounded-full border-2 border-orange-500/10 animate-[ping_3s_linear_infinite]"></div>
             <div className="absolute w-64 h-64 rounded-full border border-orange-400/20 animate-[pulse_2s_ease-in-out_infinite]"></div>
-            <div className="w-40 h-40 bg-gradient-to-tr from-orange-600 via-orange-500 to-red-600 rounded-full flex items-center justify-center shadow-[0_0_60px_-15px_rgba(234,88,12,0.6)] relative z-10 border-4 border-white/10">
-              <span className="text-6xl animate-bounce">🎙️</span>
+            <div className={`w-40 h-40 bg-gradient-to-tr from-orange-600 via-orange-500 to-red-600 rounded-full flex items-center justify-center shadow-[0_0_60px_-15px_rgba(234,88,12,0.6)] relative z-10 border-4 border-white/10 transition-transform ${audioLevel > 0.1 ? 'scale-110' : 'scale-100'}`}>
+              <span className={`text-6xl ${isActive ? 'animate-bounce' : 'opacity-50'}`}>🎙️</span>
             </div>
           </div>
 
           <div className="text-center space-y-4 relative z-10 max-w-sm">
-            <div className="inline-block bg-orange-500/10 px-4 py-1 rounded-full border border-orange-500/20">
-              <p className="text-orange-400 text-[10px] font-black uppercase tracking-[0.4em]">Encrypted Line Active</p>
+            <div className={`inline-block px-4 py-1 rounded-full border transition-all ${isActive ? 'bg-orange-500/10 border-orange-500/20' : 'bg-slate-800 border-slate-700'}`}>
+              <p className={`${isActive ? 'text-orange-400' : 'text-slate-500'} text-[10px] font-black uppercase tracking-[0.4em]`}>
+                {isActive ? 'Encrypted Line Active' : 'Connecting to Persona...'}
+              </p>
             </div>
             <div className="flex flex-col space-y-2">
-              <p className="text-slate-400 text-xs italic font-medium">"Focus on authorization before the $775 pitch..."</p>
+              {isActive ? (
+                <p className="text-slate-400 text-xs italic font-medium">"Focus on authorization before the $775 pitch..."</p>
+              ) : (
+                <div className="flex justify-center space-x-1">
+                  <div className="w-1 h-3 bg-slate-700 rounded-full animate-bounce"></div>
+                  <div className="w-1 h-3 bg-slate-700 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                  <div className="w-1 h-3 bg-slate-700 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                </div>
+              )}
               <p className="text-slate-500 text-[9px] uppercase font-bold tracking-widest bg-slate-800/50 py-1 rounded">Targeting: {persona.company}</p>
             </div>
           </div>
