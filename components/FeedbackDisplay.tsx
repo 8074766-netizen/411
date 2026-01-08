@@ -17,11 +17,17 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
 
   useEffect(() => {
     const fetchFeedback = async () => {
+      if (!transcript || transcript.length === 0) {
+        console.warn("No transcript data available for feedback.");
+        setLoading(false);
+        return;
+      }
+
       try {
         const fullTranscript = transcript.join('\n\n');
         const result = await getSalesFeedback(fullTranscript, persona);
         setFeedback(result);
-        
+
         if (onFeedbackGenerated && !reportedRef.current) {
           onFeedbackGenerated(result);
           reportedRef.current = true;
@@ -45,11 +51,31 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
     );
   }
 
+  if (!feedback) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] space-y-6 text-center px-4">
+        <div className="text-6xl">⚠️</div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-slate-800">No Evaluation Data</h2>
+          <p className="text-slate-500 max-w-md">
+            We couldn't generate an evaluation for this session. This usually happens if the conversation was too short or if there was a connection issue.
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-3 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-slate-900">Session Evaluation</h2>
-        <button 
+        <button
           onClick={onClose}
           className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm"
         >
@@ -64,14 +90,13 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
             <span className="text-6xl font-black">#1</span>
           </div>
           <p className="text-xs text-slate-500 uppercase font-bold mb-2 tracking-widest">Total Rating</p>
-          <div className={`text-6xl font-black mb-3 ${
-            (feedback?.score || 0) >= 80 ? 'text-green-600' : (feedback?.score || 0) >= 60 ? 'text-orange-600' : 'text-red-600'
-          }`}>
+          <div className={`text-6xl font-black mb-3 ${(feedback?.score || 0) >= 80 ? 'text-green-600' : (feedback?.score || 0) >= 60 ? 'text-orange-600' : 'text-red-600'
+            }`}>
             {feedback?.score}%
           </div>
           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-4">
-             <div 
-              className={`h-full transition-all duration-1000 ${(feedback?.score || 0) >= 80 ? 'bg-green-500' : 'bg-orange-500'}`} 
+            <div
+              className={`h-full transition-all duration-1000 ${(feedback?.score || 0) >= 80 ? 'bg-green-500' : 'bg-orange-500'}`}
               style={{ width: `${feedback?.score}%` }}
             ></div>
           </div>
@@ -111,11 +136,14 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
             <span className="mr-2">⭐</span> Key Strengths
           </p>
           <ul className="space-y-3">
-            {feedback?.strengths.map((s, i) => (
+            {feedback.strengths?.map((s, i) => (
               <li key={i} className="text-sm text-green-800 flex items-start">
                 <span className="mr-3 text-green-400 mt-1">▶</span> {s}
               </li>
             ))}
+            {(!feedback.strengths || feedback.strengths.length === 0) && (
+              <li className="text-sm text-green-700 italic opacity-60">No specific strengths identified.</li>
+            )}
           </ul>
         </div>
 
@@ -125,11 +153,14 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
             <span className="mr-2">📉</span> Critical Feedback
           </p>
           <ul className="space-y-3">
-            {feedback?.improvements.map((im, i) => (
+            {feedback.improvements?.map((im, i) => (
               <li key={i} className="text-sm text-red-800 flex items-start">
                 <span className="mr-3 text-red-400 mt-1">▶</span> {im}
               </li>
             ))}
+            {(!feedback.improvements || feedback.improvements.length === 0) && (
+              <li className="text-sm text-red-700 italic opacity-60">No major improvements needed.</li>
+            )}
           </ul>
         </div>
       </div>
