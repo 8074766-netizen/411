@@ -4,7 +4,7 @@ import { COMPANY_MANUAL, COMPANY_NAME } from "../constants";
 
 export const getKnowledgeResponse = async (query: string, history: any[]) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
+  
   // Filter out system messages and ensure roles are 'user' or 'model'
   const processedHistory = history
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -18,7 +18,7 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
   const validHistory = firstUserIndex !== -1 ? processedHistory.slice(firstUserIndex) : [];
 
   const response = await ai.models.generateContent({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3-flash-preview',
     contents: [...validHistory, { role: 'user', parts: [{ text: query }] }],
     config: {
       tools: [{ googleSearch: {} }],
@@ -45,74 +45,58 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
 };
 
 export const getSalesFeedback = async (transcript: string, persona: any) => {
-  const apiKey = process.env.GEMINI_API_KEY || '';
-  if (!apiKey) {
-    console.warn("GEMINI_API_KEY is missing. Evaluation will fail.");
-    throw new Error("API Key missing");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [{
-            text: `Evaluate the following sales call transcript based on the 411 SMART SEARCH.CA 2024 SCRIPT.
-            
-            Persona Pitched: ${persona.name} (${persona.role} at ${persona.company}). 
-            
-            MANDATORY SCRIPT STEPS TO CHECK:
-            1. DID THEY ASK FOR AUTHORIZATION? (Crucial: "Are you authorized to confirm info as well as purchase?")
-            2. DID THEY CONFIRM ADDRESS/INFO?
-            3. DID THEY MENTION THE VALUE: "Choice of 2 categories and 7 keywords"?
-            4. DID THEY QUOTE THE $775.00 PRICE CORRECTLY?
-            5. DID THEY ASK FOR NAME SPELLING FOR THE INVOICE?
-            6. DID THEY MENTION PROMOTIONS? (15% 2nd year or 10% Credit Card)
-            
-            Evaluation Metrics:
-            - Rebuttal Rating: How effectively did they use the ARC (Acknowledge, Reaffirm, Close) method for objections?
-            - Script Adherence: How verbatim and accurate were they to the 2024 Master Script?
-            
-            Training Manual Background:
-            ${COMPANY_MANUAL}
-            
-            Transcript:
-            ${transcript}
-            
-            Provide a detailed professional evaluation in JSON format.`
-          }]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            score: { type: Type.NUMBER, description: "Overall score out of 100" },
-            rebuttalScore: { type: Type.NUMBER, description: "Rating out of 100 for objection handling" },
-            scriptAdherenceScore: { type: Type.NUMBER, description: "Rating out of 100 for script accuracy/verbatim" },
-            strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Key positive points from the script" },
-            improvements: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Specific script steps missed" },
-            summary: { type: Type.STRING, description: "One paragraph summary" },
-            detailedAnalysis: { type: Type.STRING, description: "Markdown analysis of how they used the script and ARC method." }
-          },
-          required: ["score", "rebuttalScore", "scriptAdherenceScore", "strengths", "improvements", "summary", "detailedAnalysis"]
-        }
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: [
+      { 
+        role: 'user', 
+        parts: [{ 
+          text: `Evaluate the following sales call transcript based on the 411 SMART SEARCH.CA 2024 SCRIPT.
+          
+          Persona Pitched: ${persona.name} (${persona.role} at ${persona.company}). 
+          
+          MANDATORY SCRIPT STEPS TO CHECK:
+          1. DID THEY ASK FOR AUTHORIZATION? (Crucial: "Are you authorized to confirm info as well as purchase?")
+          2. DID THEY CONFIRM ADDRESS/INFO?
+          3. DID THEY MENTION THE VALUE: "Choice of 2 categories and 7 keywords"?
+          4. DID THEY QUOTE THE $775.00 PRICE CORRECTLY?
+          5. DID THEY ASK FOR NAME SPELLING FOR THE INVOICE?
+          6. DID THEY MENTION PROMOTIONS? (15% 2nd year or 10% Credit Card)
+          
+          Evaluation Metrics:
+          - Rebuttal Rating: How effectively did they use the ARC (Acknowledge, Reaffirm, Close) method for objections?
+          - Script Adherence: How verbatim and accurate were they to the 2024 Master Script?
+          
+          Training Manual Background:
+          ${COMPANY_MANUAL}
+          
+          Transcript:
+          ${transcript}
+          
+          Provide a detailed professional evaluation in JSON format.` 
+        }] 
       }
-    });
-
-    const text = response.text;
-    if (!text) {
-      console.error("Empty response from Gemini", response);
-      throw new Error("Empty response from model");
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          score: { type: Type.NUMBER, description: "Overall score out of 100" },
+          rebuttalScore: { type: Type.NUMBER, description: "Rating out of 100 for objection handling" },
+          scriptAdherenceScore: { type: Type.NUMBER, description: "Rating out of 100 for script accuracy/verbatim" },
+          strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Key positive points from the script" },
+          improvements: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Specific script steps missed" },
+          summary: { type: Type.STRING, description: "One paragraph summary" },
+          detailedAnalysis: { type: Type.STRING, description: "Markdown analysis of how they used the script and ARC method." }
+        },
+        required: ["score", "rebuttalScore", "scriptAdherenceScore", "strengths", "improvements", "summary", "detailedAnalysis"]
+      }
     }
-
-    return JSON.parse(text);
-  } catch (err) {
-    console.error("error in getSalesFeedback:", err);
-    throw err;
-  }
+  });
+  
+  const text = response.text;
+  if (!text) throw new Error("Empty response from model");
+  return JSON.parse(text);
 };

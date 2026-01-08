@@ -8,19 +8,19 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ history }) => {
   const totalPitches = history.length;
-
-  const avgOverall = totalPitches > 0
-    ? Math.round(history.reduce((acc, curr) => acc + (curr.feedback?.score || 0), 0) / totalPitches)
+  
+  const avgOverall = totalPitches > 0 
+    ? Math.round(history.reduce((acc, curr) => acc + (curr.feedback?.score || 0), 0) / totalPitches) 
     : 0;
 
-  const avgRebuttal = totalPitches > 0
-    ? Math.round(history.reduce((acc, curr) => acc + (curr.feedback?.rebuttalScore || 0), 0) / totalPitches)
+  const avgRebuttal = totalPitches > 0 
+    ? Math.round(history.reduce((acc, curr) => acc + (curr.feedback?.rebuttalScore || 0), 0) / totalPitches) 
     : 0;
 
-  const avgScript = totalPitches > 0
-    ? Math.round(history.reduce((acc, curr) => acc + (curr.feedback?.scriptAdherenceScore || 0), 0) / totalPitches)
+  const avgScript = totalPitches > 0 
+    ? Math.round(history.reduce((acc, curr) => acc + (curr.feedback?.scriptAdherenceScore || 0), 0) / totalPitches) 
     : 0;
-
+  
   const highPerformers = history.filter(h => (h.feedback?.score || 0) >= 80).length;
   const successRate = totalPitches > 0 ? Math.round((highPerformers / totalPitches) * 100) : 0;
 
@@ -37,8 +37,8 @@ const Dashboard: React.FC<DashboardProps> = ({ history }) => {
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">Training Dashboard</h2>
           <p className="text-slate-500 mt-1">
-            {totalPitches === 0
-              ? "Welcome! Start your first roleplay to generate performance data."
+            {totalPitches === 0 
+              ? "Welcome! Start your first roleplay to generate performance data." 
               : `Tracking performance from ${totalPitches} training sessions.`}
           </p>
         </div>
@@ -85,8 +85,9 @@ const Dashboard: React.FC<DashboardProps> = ({ history }) => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className={`text-lg font-black block ${(item.feedback?.score || 0) >= 80 ? 'text-green-600' : (item.feedback?.score || 0) >= 60 ? 'text-orange-600' : 'text-red-600'
-                      }`}>
+                    <span className={`text-lg font-black block ${
+                      (item.feedback?.score || 0) >= 80 ? 'text-green-600' : (item.feedback?.score || 0) >= 60 ? 'text-orange-600' : 'text-red-600'
+                    }`}>
                       {item.feedback?.score}%
                     </span>
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total</span>
@@ -99,7 +100,7 @@ const Dashboard: React.FC<DashboardProps> = ({ history }) => {
 
         <div className="bg-slate-900 p-8 rounded-2xl text-white shadow-xl flex flex-col justify-between relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-            <span className="text-9xl">📖</span>
+             <span className="text-9xl">📖</span>
           </div>
           <div className="relative z-10">
             <h3 className="text-2xl font-black mb-3">Skill Radar</h3>
@@ -135,7 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ history }) => {
           </div>
           <div className="mt-8 pt-6 border-t border-slate-800">
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">
-              Certification Goal: 5 Calls at {'>'}85% Overall Score.
+              Certification Goal: 5 Calls at >85% Overall Score.
             </p>
           </div>
         </div>
