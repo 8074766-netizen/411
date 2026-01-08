@@ -58,48 +58,21 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         audioContextsRef.current = { input: inputCtx, output: outputCtx };
 
-        let session: any = null;
+        if (inputCtx.state === 'suspended') await inputCtx.resume();
+        if (outputCtx.state === 'suspended') await outputCtx.resume();
 
-        const sessionPromise = ai.live.connect({
+        const session = await ai.live.connect({
           model: 'gemini-2.0-flash-exp',
           callbacks: {
-            onopen: async () => {
-              console.log('Live session connected');
-              setIsActive(true);
-              setConnectionError(null);
-
-              if (inputCtx.state === 'suspended') await inputCtx.resume();
-              if (outputCtx.state === 'suspended') await outputCtx.resume();
-
-              const source = inputCtx.createMediaStreamSource(stream);
-              const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
-
-              scriptProcessor.onaudioprocess = (e) => {
-                const inputData = e.inputBuffer.getChannelData(0);
-
-                // Calculate RMS level for UI feedback
-                let sum = 0;
-                for (let i = 0; i < inputData.length; i++) {
-                  sum += inputData[i] * inputData[i];
-                }
-                const level = Math.sqrt(sum / inputData.length);
-                if (isMounted) setAudioLevel(level);
-
-                const currentSession = sessionRef.current;
-                if (!currentSession) return;
-
-                const pcmBlob = createBlob(inputData);
-
-                // Trying the most direct format which works in latest @google/genai
-                currentSession.sendRealtimeInput([pcmBlob]);
-              };
-
-              source.connect(scriptProcessor);
-              scriptProcessor.connect(inputCtx.destination);
-              console.log('Microphone stream active');
+            onopen: () => {
+              console.log('Gemini Live: Connection opened');
+              if (isMounted) {
+                setIsActive(true);
+                setConnectionError(null);
+              }
             },
             onmessage: async (message) => {
-              console.log('AI Message:', message);
+              console.log('Gemini Live: Message received', message);
               if (message.serverContent?.outputTranscription) {
                 currentTurnTranscriptRef.current.model += message.serverContent.outputTranscription.text;
               } else if (message.serverContent?.inputTranscription) {
@@ -119,18 +92,12 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
                   const audioData = part.inlineData?.data;
                   if (audioData) {
                     const { output: ctx } = audioContextsRef.current!;
-
-                    // Gapless playback logic
                     nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
                     const buffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
                     const source = ctx.createBufferSource();
                     source.buffer = buffer;
                     source.connect(ctx.destination);
-
-                    source.addEventListener('ended', () => {
-                      sourcesRef.current.delete(source);
-                    });
-
+                    source.addEventListener('ended', () => sourcesRef.current.delete(source));
                     source.start(nextStartTimeRef.current);
                     nextStartTimeRef.current += buffer.duration;
                     sourcesRef.current.add(source);
@@ -144,48 +111,64 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               }
             },
             onerror: (e) => {
-              console.error('Live session error:', e);
+              console.error('Gemini Live: Error', e);
               if (isMounted) {
                 setIsActive(false);
-                setConnectionError("Connection to AI failed. Please check your API key and internet.");
+                setConnectionError("AI connection error. Check API key or connection.");
               }
             },
             onclose: (e) => {
-              console.log('Live session closed', e);
+              console.log('Gemini Live: Connection closed', e);
               if (isMounted) setIsActive(false);
             },
           },
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: persona.difficulty === 'Hard' ? 'Puck' : 'Kore'
-                }
-              },
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: persona.difficulty === 'Hard' ? 'Puck' : 'Kore' } },
             },
-            outputAudioTranscription: {},
-            inputAudioTranscription: {},
             systemInstruction: `You are acting as ${persona.name}, ${persona.role} at ${persona.company}.
-            Personality: ${persona.personality}.
-
-            YOUR BUSINESS INFORMATION:
-            - Address: ${persona.address}, ${persona.city}, ${persona.province}
-            - Phone: ${persona.phone}
-
+            ${persona.personality}
+            
             DIRECTIONS:
-            1. Respond naturally and promptly to audio input.
-            2. If the user greets you, reply as the persona.
-            3. Follow the sales training guidelines for objections and ARC method.
-            4. Context: ${COMPANY_MANUAL}.`,
+            1. Respond naturally to audio input.
+            2. Be professional and ready for a sales call.
+            3. Context: ${COMPANY_MANUAL}.`
           },
         });
 
-        session = await sessionPromise;
         sessionRef.current = session;
+        console.log('Gemini Live: Session object ready');
+
+        // Setup microphone strictly AFTER session is set
+        const source = inputCtx.createMediaStreamSource(stream);
+        const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
+
+        scriptProcessor.onaudioprocess = (e) => {
+          const inputData = e.inputBuffer.getChannelData(0);
+
+          // Audio level visualization
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+          const level = Math.sqrt(sum / inputData.length);
+          if (isMounted) setAudioLevel(level);
+
+          if (sessionRef.current && isMounted) {
+            const pcmBlob = createBlob(inputData);
+            // Use explicit Part format with inlineData
+            sessionRef.current.sendRealtimeInput([{
+              inlineData: pcmBlob
+            }]);
+          }
+        };
+
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(inputCtx.destination);
+        console.log('Gemini Live: Microphone stream attached and active');
+
       } catch (err: any) {
         console.error("Failed to start session:", err);
-        if (isMounted) setConnectionError(err.message || "Failed to access microphone.");
+        if (isMounted) setConnectionError(err.message || "Microphone access failed.");
       }
     };
 
