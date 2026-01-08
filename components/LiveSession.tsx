@@ -53,7 +53,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         audioContextsRef.current = { input: inputCtx, output: outputCtx };
 
         const sessionPromise = ai.live.connect({
-          model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+          model: 'gemini-2.0-flash-exp',
           callbacks: {
             onopen: () => {
               if (!isMounted) return;
