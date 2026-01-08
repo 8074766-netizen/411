@@ -16,8 +16,8 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   const [showScript, setShowScript] = useState(false);
   const [showLeadInfo, setShowLeadInfo] = useState(true);
   const [transcription, setTranscription] = useState<string[]>([]);
+  
   const transcriptRef = useRef<string[]>([]);
-
   const audioContextsRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
   const sessionRef = useRef<any>(null);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
@@ -25,25 +25,28 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   const currentTurnTranscriptRef = useRef({ user: '', model: '' });
 
   const stopAllAudio = useCallback(() => {
-    sourcesRef.current.forEach(source => source.stop());
-    sourcesRef.current.clear();
+    for (const source of sourcesRef.current.values()) {
+      source.stop();
+      sourcesRef.current.delete(source);
+    }
+    nextStartTimeRef.current = 0;
   }, []);
 
   const endSession = async () => {
     setIsEnding(true);
+    if (sessionRef.current) {
+      // sessionRef.current.close() is handled by cleanup usually but we can be explicit
+    }
     onEndSession(transcriptRef.current);
   };
 
   useEffect(() => {
+    // Create new instance here to ensure fresh session
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    let isMounted = true;
+    
     const initSession = async () => {
       try {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-          console.error("API Key missing from environment. Add GEMINI_API_KEY to .env or Vercel.");
-          return;
-        }
-
-        const ai = new GoogleGenAI({ apiKey });
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -53,9 +56,11 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
           model: 'gemini-2.5-flash-native-audio-preview-12-2025',
           callbacks: {
             onopen: () => {
+              if (!isMounted) return;
               setIsActive(true);
               const source = inputCtx.createMediaStreamSource(stream);
               const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
+              
               scriptProcessor.onaudioprocess = (e) => {
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
@@ -63,7 +68,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
                   session.sendRealtimeInput({ media: pcmBlob });
                 });
               };
-
+              
               source.connect(scriptProcessor);
               scriptProcessor.connect(inputCtx.destination);
             },
@@ -82,14 +87,20 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               }
 
               const audioData = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-              if (audioData) {
-                const { output: ctx } = audioContextsRef.current!;
+              if (audioData && audioContextsRef.current) {
+                const { output: ctx } = audioContextsRef.current;
+                
+                // Gapless playback logic
                 nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
                 const buffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
                 source.connect(ctx.destination);
-                source.addEventListener('ended', () => sourcesRef.current.delete(source));
+                
+                source.addEventListener('ended', () => {
+                  sourcesRef.current.delete(source);
+                });
+
                 source.start(nextStartTimeRef.current);
                 nextStartTimeRef.current += buffer.duration;
                 sourcesRef.current.add(source);
@@ -97,16 +108,21 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
               if (message.serverContent?.interrupted) {
                 stopAllAudio();
-                nextStartTimeRef.current = 0;
               }
             },
             onerror: (e) => console.error('Live session error:', e),
-            onclose: () => setIsActive(false),
+            onclose: () => {
+              if (isMounted) setIsActive(false);
+            },
           },
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: persona.difficulty === 'Hard' ? 'Puck' : 'Kore' } },
+              voiceConfig: { 
+                prebuiltVoiceConfig: { 
+                  voiceName: persona.difficulty === 'Hard' ? 'Puck' : 'Kore' 
+                } 
+              },
             },
             outputAudioTranscription: {},
             inputAudioTranscription: {},
@@ -122,12 +138,12 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
             
             BEHAVIOR GUIDELINES FOR TRAINING:
             - Step 3 (Confirmation): If the rep asks to confirm your details, verify they are correct based on the list above.
-            - If the rep FAILS to ask "Are you authorized to confirm info as well as purchase?" within the first minute, be very difficult when they mention the $775 price later. Say things like "Wait, I didn't say I was buying anything" or "I'm just the manager, I can't authorize this."
+            - Authorization Check: If the rep FAILS to ask "Are you authorized to confirm info as well as purchase?" within the first minute, be very difficult when they mention the $775 price later.
             - If they DO ask for authorization early, be more cooperative.
             - Raise these specific objections based on the manual: ${persona.objections.join(', ')}.
             - Use the "Complimentary listing" background: "I already have a free listing, why should I pay?"
-            - If they offer the 10% credit card discount, show interest.
-            - If they use the ARC method (Acknowledge, Reaffirm, Close), you should eventually give in and agree to the invoice.
+            - Mention 10% credit card discount if they don't, or react positively if they do.
+            - If they use the ARC method (Acknowledge, Reaffirm, Close) effectively, eventually give in and agree to the spelling of your name for the invoice.
             
             Context for 411 SMART SEARCH.CA: ${COMPANY_MANUAL}.`,
           },
@@ -142,6 +158,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
     initSession();
 
     return () => {
+      isMounted = false;
       stopAllAudio();
       audioContextsRef.current?.input.close();
       audioContextsRef.current?.output.close();
@@ -154,38 +171,38 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
       <div className="p-6 bg-slate-800/50 border-b border-slate-700 flex justify-between items-center">
         <div className="flex items-center space-x-4">
           <div className="relative">
-            <img src={persona.avatar} alt={persona.name} className="w-14 h-14 rounded-full border-2 border-orange-500" />
-            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-800 ${isActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            <img src={persona.avatar} alt={persona.name} className="w-14 h-14 rounded-full border-2 border-orange-500 shadow-lg" />
+            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-800 ${isActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
           </div>
           <div>
-            <h3 className="text-white font-bold text-lg">{persona.name}</h3>
-            <p className="text-orange-400 text-[10px] font-bold uppercase tracking-widest flex items-center">
+            <h3 className="text-white font-bold text-lg leading-tight">{persona.name}</h3>
+            <p className="text-orange-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center">
               <span className="w-2 h-2 bg-orange-400 rounded-full animate-ping mr-2"></span>
               2024 SCRIPT SESSION
             </p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <button
+          <button 
             onClick={() => setShowLeadInfo(!showLeadInfo)}
-            className={`px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 ${showLeadInfo ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+            className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center space-x-2 ${showLeadInfo ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300'}`}
           >
             <span>🏢</span>
-            <span className="hidden sm:inline">Lead Info</span>
+            <span className="hidden sm:inline">Lead Data</span>
           </button>
-          <button
+          <button 
             onClick={() => setShowScript(!showScript)}
-            className={`px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 ${showScript ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+            className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center space-x-2 ${showScript ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
           >
             <span>📄</span>
             <span className="hidden sm:inline">Script</span>
           </button>
-          <button
+          <button 
             onClick={endSession}
             disabled={isEnding}
-            className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl text-sm font-black shadow-lg shadow-red-900/40 transition-all flex items-center space-x-2 active:scale-95 ml-2"
+            className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-900/40 transition-all flex items-center space-x-2 active:scale-95 ml-2"
           >
-            <span>FINISH</span>
+            <span>DISCONNECT</span>
             <span className="text-lg">⏹</span>
           </button>
         </div>
@@ -194,52 +211,56 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
       <div className="flex-1 flex relative overflow-hidden">
         {/* Left Side: Lead Data (CRM View) */}
         {showLeadInfo && (
-          <div className="w-72 bg-slate-800/80 border-r border-slate-700 p-5 overflow-y-auto animate-in slide-in-from-left duration-300">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Prospect Details</h4>
-              <span className="bg-slate-900 text-[8px] px-2 py-0.5 rounded text-slate-500 font-bold">CRM ID: {persona.id.toUpperCase()}</span>
-            </div>
-
-            <div className="space-y-5">
-              <div className="space-y-1">
-                <p className="text-[9px] text-slate-500 font-bold uppercase">Business Name</p>
-                <p className="text-sm font-bold text-white">{persona.company}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[9px] text-slate-500 font-bold uppercase">Address</p>
-                <p className="text-xs text-slate-200">{persona.address}</p>
-                <p className="text-xs text-slate-200">{persona.city}, {persona.province}</p>
-                <p className="text-xs text-slate-200">{persona.postalCode}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[9px] text-slate-500 font-bold uppercase">Phone Number</p>
-                <p className="text-sm font-mono font-bold text-orange-400">{persona.phone}</p>
-              </div>
-              <div className="pt-4 border-t border-slate-700/50">
-                <p className="text-[9px] text-slate-500 font-bold uppercase mb-2">Internal Notes</p>
-                <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                  {persona.personality}
-                </p>
-              </div>
-            </div>
+          <div className="w-72 bg-slate-800/80 border-r border-slate-700 p-6 overflow-y-auto animate-in slide-in-from-left duration-300">
+             <div className="flex items-center justify-between mb-6">
+               <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Prospect Insights</h4>
+               <span className="bg-slate-900 text-[8px] px-2 py-0.5 rounded text-slate-500 font-bold uppercase tracking-widest">Verified</span>
+             </div>
+             
+             <div className="space-y-6">
+               <div className="space-y-1">
+                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Business Entity</p>
+                 <p className="text-sm font-bold text-white leading-tight">{persona.company}</p>
+               </div>
+               <div className="space-y-1">
+                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Site Location</p>
+                 <p className="text-xs text-slate-200">{persona.address}</p>
+                 <p className="text-xs text-slate-200">{persona.city}, {persona.province}</p>
+                 <p className="text-xs text-slate-200 font-mono tracking-tighter">{persona.postalCode}</p>
+               </div>
+               <div className="space-y-1">
+                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Direct Phone</p>
+                 <p className="text-sm font-mono font-bold text-orange-400">{persona.phone}</p>
+               </div>
+               <div className="pt-6 border-t border-slate-700/50">
+                 <p className="text-[9px] text-slate-500 font-bold uppercase mb-3 tracking-wider">Psychographic Profile</p>
+                 <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-4 rounded-xl border border-slate-700 leading-relaxed">
+                   {persona.personality}
+                 </p>
+               </div>
+             </div>
           </div>
         )}
 
         {/* Main Interaction Area */}
-        <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] relative">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/0 via-orange-500/5 to-slate-900/0 pointer-events-none"></div>
+          
           <div className="relative flex items-center justify-center">
-            <div className="absolute w-64 h-64 rounded-full border-4 border-orange-500/10 animate-ping"></div>
-            <div className="absolute w-48 h-48 rounded-full border-2 border-orange-400/20 animate-pulse"></div>
-            <div className="w-32 h-32 bg-gradient-to-tr from-orange-500 to-red-600 rounded-full flex items-center justify-center shadow-2xl shadow-orange-500/40 relative z-10">
-              <span className="text-4xl text-white">📡</span>
+            <div className="absolute w-80 h-80 rounded-full border-2 border-orange-500/10 animate-[ping_3s_linear_infinite]"></div>
+            <div className="absolute w-64 h-64 rounded-full border border-orange-400/20 animate-[pulse_2s_ease-in-out_infinite]"></div>
+            <div className="w-40 h-40 bg-gradient-to-tr from-orange-600 via-orange-500 to-red-600 rounded-full flex items-center justify-center shadow-[0_0_60px_-15px_rgba(234,88,12,0.6)] relative z-10 border-4 border-white/10">
+              <span className="text-6xl animate-bounce">🎙️</span>
             </div>
           </div>
 
-          <div className="text-center space-y-3 relative z-10">
-            <p className="text-orange-200 text-sm font-bold uppercase tracking-[0.3em]">Live Feed Active</p>
+          <div className="text-center space-y-4 relative z-10 max-w-sm">
+            <div className="inline-block bg-orange-500/10 px-4 py-1 rounded-full border border-orange-500/20">
+               <p className="text-orange-400 text-[10px] font-black uppercase tracking-[0.4em]">Encrypted Line Active</p>
+            </div>
             <div className="flex flex-col space-y-2">
-              <p className="text-slate-400 text-xs italic">"Verify address and city first..."</p>
-              <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest">Pitching to {persona.company}</p>
+              <p className="text-slate-400 text-xs italic font-medium">"Focus on authorization before the $775 pitch..."</p>
+              <p className="text-slate-500 text-[9px] uppercase font-bold tracking-widest bg-slate-800/50 py-1 rounded">Targeting: {persona.company}</p>
             </div>
           </div>
         </div>
@@ -247,43 +268,53 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         {/* Right Side: Script Cheat Sheet */}
         {showScript && (
           <div className="w-80 bg-slate-800 border-l border-slate-700 p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
-            <h4 className="text-xs font-black text-blue-400 uppercase tracking-widest mb-4">Script Cheat Sheet</h4>
+            <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-6">Execution Script</h4>
             <div className="space-y-4 text-[11px] text-slate-300 leading-relaxed">
-              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                <p className="font-bold text-white mb-1">1. Greeting</p>
-                <p>"Good morning, my name is [Name] from 411 SMART SEARCH.CA."</p>
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 hover:border-blue-500/30 transition-colors">
+                <p className="font-black text-white mb-2 uppercase tracking-tighter text-[9px] text-blue-400">Step 1: Introduction</p>
+                <p className="italic">"Good morning/afternoon, my name is [Name] from 411 SMART SEARCH.CA."</p>
               </div>
-              <div className="bg-orange-900/20 p-3 rounded-lg border border-orange-500/30">
-                <p className="font-bold text-orange-400 mb-1">2. AUTHORIZATION (CRITICAL)</p>
-                <p>"Are you authorized to confirm info as well as purchase for your company?"</p>
+              <div className="bg-orange-900/20 p-4 rounded-xl border border-orange-500/40 shadow-inner">
+                <p className="font-black text-orange-400 mb-2 uppercase tracking-tighter text-[9px]">Step 2: AUTHORIZATION (CRITICAL)</p>
+                <p className="font-bold text-white">"Are you authorized to confirm info as well as purchase for your company?"</p>
               </div>
-              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                <p className="font-bold text-white mb-1">3. Confirmation</p>
-                <p>"I'm just calling to verify the address we have for you: {persona.address} in {persona.city}?"</p>
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                <p className="font-black text-white mb-2 uppercase tracking-tighter text-[9px] text-slate-500">Step 3: Business Verification</p>
+                <p>"Verifying your primary listing address at: {persona.address} in {persona.city}?"</p>
               </div>
-              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                <p className="font-bold text-white mb-1">4. Value</p>
-                <p>"Choice of 2 categories and 7 keywords. Toll free #, website, email."</p>
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                <p className="font-black text-white mb-2 uppercase tracking-tighter text-[9px] text-slate-500">Step 4: Value Stack</p>
+                <p>"Premium upgrade includes 2 categories, 7 keywords, image gallery, and toll-free linking."</p>
               </div>
-              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                <p className="font-bold text-white mb-1">5. The Close</p>
-                <p>"Premium upgrade... invoice of $775.00 coming... Spelling of your first and last name?"</p>
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                <p className="font-black text-white mb-2 uppercase tracking-tighter text-[9px] text-green-400">Step 5: The Commitment</p>
+                <p>"One-time invoice of $775.00 for the annual placement. May I have the spelling of your name?"</p>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      <div className="h-40 bg-black/60 border-t border-slate-800 p-6 overflow-y-auto">
-        <p className="text-[10px] text-slate-500 font-black uppercase mb-4 tracking-[0.2em]">Live Script Verification</p>
+      <div className="h-44 bg-black/60 backdrop-blur-md border-t border-slate-800 p-6 overflow-y-auto">
+        <p className="text-[10px] text-slate-500 font-black uppercase mb-4 tracking-[0.3em] flex items-center">
+           <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 animate-pulse"></span>
+           Live Script Monitor
+        </p>
         <div className="space-y-4">
           {transcription.length === 0 && (
-            <p className="text-slate-600 text-sm italic">Call in progress. Use Step 3 to confirm the business address on the left.</p>
+            <div className="flex items-center space-x-3 text-slate-600 text-xs italic">
+               <div className="flex space-x-1">
+                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite]"></div>
+                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_100ms]"></div>
+                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_200ms]"></div>
+               </div>
+               <p>Waiting for voice input... Start with Step 1.</p>
+            </div>
           )}
           {transcription.map((line, i) => (
-            <div key={i} className="text-sm text-slate-300 border-l-2 border-orange-500/50 pl-4 py-1 bg-white/5 rounded-r-lg">
+            <div key={i} className="text-sm border-l-2 border-orange-500/30 pl-4 py-2 bg-white/5 rounded-r-xl transition-all hover:bg-white/10">
               {line.split('\n').map((l, idx) => (
-                <p key={idx} className={l.startsWith('Rep:') ? 'text-blue-300' : 'text-slate-100 font-semibold italic'}>
+                <p key={idx} className={l.startsWith('Rep:') ? 'text-blue-300 font-medium' : 'text-slate-100 font-bold italic'}>
                   {l}
                 </p>
               ))}
@@ -291,7 +322,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
           ))}
         </div>
       </div>
-    </div >
+    </div>
   );
 };
 

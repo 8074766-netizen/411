@@ -3,8 +3,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { COMPANY_MANUAL, COMPANY_NAME } from "../constants";
 
 export const getKnowledgeResponse = async (query: string, history: any[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   // Filter out system messages and ensure roles are 'user' or 'model'
   const processedHistory = history
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -21,6 +21,7 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
     model: 'gemini-3-flash-preview',
     contents: [...validHistory, { role: 'user', parts: [{ text: query }] }],
     config: {
+      tools: [{ googleSearch: {} }],
       systemInstruction: `You are an expert internal training coach for ${COMPANY_NAME}. 
       
       TONE & STYLE GUIDELINES:
@@ -28,26 +29,29 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
       - DO NOT use Markdown headers (no # symbols).
       - Use bullet points or simple spacing for organization.
       - Use Bold text sparingly for emphasis (e.g., **Term**).
-      - Avoid "robot-speak" or excessive formatting symbols.
       - If explaining a script part, present it naturally as if you're speaking to the rep.
       
       KNOWLEDGE CONTEXT:
       - Use the 2024 Training Manual and Script: ${COMPANY_MANUAL}.
+      - Use Google Search to provide up-to-date competitive intel (e.g., comparing 411 to Yelp, Google My Business, or Yellow Pages) or current SEO trends in Canada.
       - Focus on practical, actionable advice for sales calls.`,
     },
   });
-  return response.text;
+
+  return {
+    text: response.text,
+    sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+  };
 };
 
 export const getSalesFeedback = async (transcript: string, persona: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: [
-      {
-        role: 'user',
-        parts: [{
+      { 
+        role: 'user', 
+        parts: [{ 
           text: `Evaluate the following sales call transcript based on the 411 SMART SEARCH.CA 2024 SCRIPT.
           
           Persona Pitched: ${persona.name} (${persona.role} at ${persona.company}). 
@@ -70,8 +74,8 @@ export const getSalesFeedback = async (transcript: string, persona: any) => {
           Transcript:
           ${transcript}
           
-          Provide a detailed professional evaluation in JSON format.`
-        }]
+          Provide a detailed professional evaluation in JSON format.` 
+        }] 
       }
     ],
     config: {
@@ -91,7 +95,7 @@ export const getSalesFeedback = async (transcript: string, persona: any) => {
       }
     }
   });
-
+  
   const text = response.text;
   if (!text) throw new Error("Empty response from model");
   return JSON.parse(text);

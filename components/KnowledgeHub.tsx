@@ -4,9 +4,13 @@ import { getKnowledgeResponse } from '../services/geminiService';
 import { Message } from '../types';
 import { COMPANY_MANUAL } from '../constants';
 
+interface ExtendedMessage extends Message {
+  sources?: any[];
+}
+
 const KnowledgeHub: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'CHAT' | 'MANUAL'>('CHAT');
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState<ExtendedMessage[]>([
     { 
       role: 'assistant', 
       content: "Hi there! I'm your training mentor. Ready to master the 411 Smart Search script? You can ask me about package pricing, handle common objections, or walk through the ARC method. What's on your mind?", 
@@ -26,14 +30,19 @@ const KnowledgeHub: React.FC = () => {
   const handleSend = async () => {
     if (!input.trim()) return;
 
-    const userMsg: Message = { role: 'user', content: input, timestamp: new Date() };
+    const userMsg: ExtendedMessage = { role: 'user', content: input, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
 
     try {
-      const response = await getKnowledgeResponse(input, messages);
-      const assistantMsg: Message = { role: 'assistant', content: response || '', timestamp: new Date() };
+      const result = await getKnowledgeResponse(input, messages);
+      const assistantMsg: ExtendedMessage = { 
+        role: 'assistant', 
+        content: result.text || '', 
+        timestamp: new Date(),
+        sources: result.sources 
+      };
       setMessages(prev => [...prev, assistantMsg]);
     } catch (error) {
       console.error(error);
@@ -87,6 +96,28 @@ const KnowledgeHub: React.FC = () => {
                   <div className="text-sm whitespace-pre-wrap leading-relaxed">
                     {formatContent(m.content)}
                   </div>
+                  
+                  {m.sources && m.sources.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-slate-200/50">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Verified Sources</p>
+                      <div className="flex flex-wrap gap-2">
+                        {m.sources.map((source: any, idx: number) => (
+                          source.web && (
+                            <a 
+                              key={idx} 
+                              href={source.web.uri} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-[10px] bg-white px-2 py-1 rounded border border-slate-200 text-orange-600 font-bold hover:bg-orange-50 transition-colors"
+                            >
+                              {source.web.title || 'Source'}
+                            </a>
+                          )
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <p className={`text-[9px] mt-2 font-bold uppercase tracking-wider opacity-40 text-right`}>
                     {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
@@ -95,10 +126,13 @@ const KnowledgeHub: React.FC = () => {
             ))}
             {isTyping && (
               <div className="flex justify-start">
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl rounded-tl-none flex space-x-1.5">
-                  <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce"></div>
-                  <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce delay-100"></div>
-                  <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce delay-200"></div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl rounded-tl-none flex flex-col space-y-2">
+                   <div className="flex space-x-1.5">
+                    <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce"></div>
+                    <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce delay-100"></div>
+                    <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce delay-200"></div>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-black uppercase tracking-tighter animate-pulse">Consulting Grounding Data...</span>
                 </div>
               </div>
             )}
@@ -110,7 +144,7 @@ const KnowledgeHub: React.FC = () => {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Type your question here..."
+                placeholder="Ask about competitors, script details, or SEO..."
                 className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm outline-none transition-all shadow-sm"
               />
               <button
@@ -126,7 +160,7 @@ const KnowledgeHub: React.FC = () => {
       ) : (
         <div className="flex-1 overflow-y-auto p-8 bg-white">
           <div className="max-w-3xl mx-auto prose prose-slate">
-            <h1 className="text-2xl font-black text-slate-900 mb-6">411 SMART SEARCH.CA - 2024 ACADEMY</h1>
+            <h1 className="text-2xl font-black text-slate-900 mb-6 uppercase tracking-tight">411 SMART SEARCH.CA - 2024 ACADEMY</h1>
             <div className="space-y-8 text-slate-700">
               {COMPANY_MANUAL.split('\n\n').map((section, idx) => (
                 <div key={idx} className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
