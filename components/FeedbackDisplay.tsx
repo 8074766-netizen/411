@@ -13,22 +13,34 @@ interface FeedbackDisplayProps {
 const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, onClose, onFeedbackGenerated }) => {
   const [feedback, setFeedback] = useState<SessionFeedback | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const reportedRef = useRef(false);
 
   useEffect(() => {
     const fetchFeedback = async () => {
+      console.log("fetchFeedback effect triggered");
       try {
+        if (!transcript || transcript.length === 0) {
+          setError("No transcript was recorded during the session. Please ensure your microphone is working and you are speaking during the call.");
+          setLoading(false);
+          return;
+        }
         const fullTranscript = transcript.join('\n\n');
+        console.log("Full transcript prepared, length:", fullTranscript.length);
         const result = await getSalesFeedback(fullTranscript, persona);
+        console.log("Feedback received in component:", result);
         setFeedback(result);
-        
+
         if (onFeedbackGenerated && !reportedRef.current) {
+          console.log("Reporting feedback to parent");
           onFeedbackGenerated(result);
           reportedRef.current = true;
         }
-      } catch (err) {
-        console.error("Feedback generation failed", err);
+      } catch (err: any) {
+        console.error("Feedback generation failed in component:", err);
+        setError(err.message || "Failed to generate AI feedback. Please try again.");
       } finally {
+        console.log("Setting loading to false");
         setLoading(false);
       }
     };
@@ -45,11 +57,29 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
     );
   }
 
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] space-y-6 animate-in fade-in duration-500">
+        <div className="text-6xl text-red-500">⚠️</div>
+        <div className="text-center space-y-2">
+          <h3 className="text-xl font-bold text-slate-900">Evaluation Error</h3>
+          <p className="text-slate-600 max-w-md">{error}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold hover:bg-orange-600 transition-all shadow-xl active:scale-95"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-slate-900">Session Evaluation</h2>
-        <button 
+        <button
           onClick={onClose}
           className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm"
         >
@@ -64,14 +94,13 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
             <span className="text-6xl font-black">#1</span>
           </div>
           <p className="text-xs text-slate-500 uppercase font-bold mb-2 tracking-widest">Total Rating</p>
-          <div className={`text-6xl font-black mb-3 ${
-            (feedback?.score || 0) >= 80 ? 'text-green-600' : (feedback?.score || 0) >= 60 ? 'text-orange-600' : 'text-red-600'
-          }`}>
+          <div className={`text-6xl font-black mb-3 ${(feedback?.score || 0) >= 80 ? 'text-green-600' : (feedback?.score || 0) >= 60 ? 'text-orange-600' : 'text-red-600'
+            }`}>
             {feedback?.score}%
           </div>
           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-4">
-             <div 
-              className={`h-full transition-all duration-1000 ${(feedback?.score || 0) >= 80 ? 'bg-green-500' : 'bg-orange-500'}`} 
+            <div
+              className={`h-full transition-all duration-1000 ${(feedback?.score || 0) >= 80 ? 'bg-green-500' : 'bg-orange-500'}`}
               style={{ width: `${feedback?.score}%` }}
             ></div>
           </div>
@@ -111,11 +140,14 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
             <span className="mr-2">⭐</span> Key Strengths
           </p>
           <ul className="space-y-3">
-            {feedback?.strengths.map((s, i) => (
+            {feedback?.strengths?.map((s, i) => (
               <li key={i} className="text-sm text-green-800 flex items-start">
                 <span className="mr-3 text-green-400 mt-1">▶</span> {s}
               </li>
             ))}
+            {(!feedback?.strengths || feedback.strengths.length === 0) && (
+              <p className="text-xs text-green-600 italic">No specific strengths noted.</p>
+            )}
           </ul>
         </div>
 
@@ -125,11 +157,14 @@ const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ transcript, persona, 
             <span className="mr-2">📉</span> Critical Feedback
           </p>
           <ul className="space-y-3">
-            {feedback?.improvements.map((im, i) => (
+            {feedback?.improvements?.map((im, i) => (
               <li key={i} className="text-sm text-red-800 flex items-start">
                 <span className="mr-3 text-red-400 mt-1">▶</span> {im}
               </li>
             ))}
+            {(!feedback?.improvements || feedback.improvements.length === 0) && (
+              <p className="text-xs text-red-600 italic">No specific improvements suggested.</p>
+            )}
           </ul>
         </div>
       </div>

@@ -34,8 +34,16 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
   const endSession = async () => {
     setIsEnding(true);
+
+    // Finalize any pending turn transcript
+    if (currentTurnTranscriptRef.current.user || currentTurnTranscriptRef.current.model) {
+      console.log("Finalizing pending turn before disconnect");
+      const entry = `${persona.name}: ${currentTurnTranscriptRef.current.model}\nRep: ${currentTurnTranscriptRef.current.user}`;
+      transcriptRef.current.push(entry);
+    }
+
     if (sessionRef.current) {
-      // sessionRef.current.close() is handled by cleanup usually but we can be explicit
+      // Explicitly close if needed, but cleanup usually handles it
     }
     onEndSession(transcriptRef.current);
   };
@@ -73,13 +81,17 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               scriptProcessor.connect(inputCtx.destination);
             },
             onmessage: async (message) => {
+              console.log("Live message received:", message);
               if (message.serverContent?.outputTranscription) {
+                console.log("Model transcription:", message.serverContent.outputTranscription.text);
                 currentTurnTranscriptRef.current.model += message.serverContent.outputTranscription.text;
               } else if (message.serverContent?.inputTranscription) {
+                console.log("User transcription:", message.serverContent.inputTranscription.text);
                 currentTurnTranscriptRef.current.user += message.serverContent.inputTranscription.text;
               }
 
               if (message.serverContent?.turnComplete) {
+                console.log("Turn complete. Model:", currentTurnTranscriptRef.current.model, "User:", currentTurnTranscriptRef.current.user);
                 const entry = `${persona.name}: ${currentTurnTranscriptRef.current.model}\nRep: ${currentTurnTranscriptRef.current.user}`;
                 transcriptRef.current.push(entry);
                 setTranscription([...transcriptRef.current]);
