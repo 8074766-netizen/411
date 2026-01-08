@@ -16,7 +16,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   const [showScript, setShowScript] = useState(false);
   const [showLeadInfo, setShowLeadInfo] = useState(true);
   const [transcription, setTranscription] = useState<string[]>([]);
-  
+
   const transcriptRef = useRef<string[]>([]);
   const audioContextsRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
   const sessionRef = useRef<any>(null);
@@ -42,9 +42,9 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
   useEffect(() => {
     // Create new instance here to ensure fresh session
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     let isMounted = true;
-    
+
     const initSession = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -53,14 +53,14 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         audioContextsRef.current = { input: inputCtx, output: outputCtx };
 
         const sessionPromise = ai.live.connect({
-          model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+          model: 'gemini-2.0-flash-exp',
           callbacks: {
             onopen: () => {
               if (!isMounted) return;
               setIsActive(true);
               const source = inputCtx.createMediaStreamSource(stream);
               const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
-              
+
               scriptProcessor.onaudioprocess = (e) => {
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
@@ -68,7 +68,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
                   session.sendRealtimeInput({ media: pcmBlob });
                 });
               };
-              
+
               source.connect(scriptProcessor);
               scriptProcessor.connect(inputCtx.destination);
             },
@@ -89,14 +89,14 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               const audioData = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
               if (audioData && audioContextsRef.current) {
                 const { output: ctx } = audioContextsRef.current;
-                
+
                 // Gapless playback logic
                 nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
                 const buffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
                 source.connect(ctx.destination);
-                
+
                 source.addEventListener('ended', () => {
                   sourcesRef.current.delete(source);
                 });
@@ -118,10 +118,10 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-              voiceConfig: { 
-                prebuiltVoiceConfig: { 
-                  voiceName: persona.difficulty === 'Hard' ? 'Puck' : 'Kore' 
-                } 
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: persona.difficulty === 'Hard' ? 'Puck' : 'Kore'
+                }
               },
             },
             outputAudioTranscription: {},
@@ -183,21 +183,21 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <button 
+          <button
             onClick={() => setShowLeadInfo(!showLeadInfo)}
             className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center space-x-2 ${showLeadInfo ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300'}`}
           >
             <span>🏢</span>
             <span className="hidden sm:inline">Lead Data</span>
           </button>
-          <button 
+          <button
             onClick={() => setShowScript(!showScript)}
             className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center space-x-2 ${showScript ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
           >
             <span>📄</span>
             <span className="hidden sm:inline">Script</span>
           </button>
-          <button 
+          <button
             onClick={endSession}
             disabled={isEnding}
             className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-900/40 transition-all flex items-center space-x-2 active:scale-95 ml-2"
@@ -212,40 +212,40 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         {/* Left Side: Lead Data (CRM View) */}
         {showLeadInfo && (
           <div className="w-72 bg-slate-800/80 border-r border-slate-700 p-6 overflow-y-auto animate-in slide-in-from-left duration-300">
-             <div className="flex items-center justify-between mb-6">
-               <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Prospect Insights</h4>
-               <span className="bg-slate-900 text-[8px] px-2 py-0.5 rounded text-slate-500 font-bold uppercase tracking-widest">Verified</span>
-             </div>
-             
-             <div className="space-y-6">
-               <div className="space-y-1">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Business Entity</p>
-                 <p className="text-sm font-bold text-white leading-tight">{persona.company}</p>
-               </div>
-               <div className="space-y-1">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Site Location</p>
-                 <p className="text-xs text-slate-200">{persona.address}</p>
-                 <p className="text-xs text-slate-200">{persona.city}, {persona.province}</p>
-                 <p className="text-xs text-slate-200 font-mono tracking-tighter">{persona.postalCode}</p>
-               </div>
-               <div className="space-y-1">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Direct Phone</p>
-                 <p className="text-sm font-mono font-bold text-orange-400">{persona.phone}</p>
-               </div>
-               <div className="pt-6 border-t border-slate-700/50">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase mb-3 tracking-wider">Psychographic Profile</p>
-                 <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-4 rounded-xl border border-slate-700 leading-relaxed">
-                   {persona.personality}
-                 </p>
-               </div>
-             </div>
+            <div className="flex items-center justify-between mb-6">
+              <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Prospect Insights</h4>
+              <span className="bg-slate-900 text-[8px] px-2 py-0.5 rounded text-slate-500 font-bold uppercase tracking-widest">Verified</span>
+            </div>
+
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Business Entity</p>
+                <p className="text-sm font-bold text-white leading-tight">{persona.company}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Site Location</p>
+                <p className="text-xs text-slate-200">{persona.address}</p>
+                <p className="text-xs text-slate-200">{persona.city}, {persona.province}</p>
+                <p className="text-xs text-slate-200 font-mono tracking-tighter">{persona.postalCode}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Direct Phone</p>
+                <p className="text-sm font-mono font-bold text-orange-400">{persona.phone}</p>
+              </div>
+              <div className="pt-6 border-t border-slate-700/50">
+                <p className="text-[9px] text-slate-500 font-bold uppercase mb-3 tracking-wider">Psychographic Profile</p>
+                <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-4 rounded-xl border border-slate-700 leading-relaxed">
+                  {persona.personality}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Main Interaction Area */}
         <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-slate-900/0 via-orange-500/5 to-slate-900/0 pointer-events-none"></div>
-          
+
           <div className="relative flex items-center justify-center">
             <div className="absolute w-80 h-80 rounded-full border-2 border-orange-500/10 animate-[ping_3s_linear_infinite]"></div>
             <div className="absolute w-64 h-64 rounded-full border border-orange-400/20 animate-[pulse_2s_ease-in-out_infinite]"></div>
@@ -256,7 +256,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
           <div className="text-center space-y-4 relative z-10 max-w-sm">
             <div className="inline-block bg-orange-500/10 px-4 py-1 rounded-full border border-orange-500/20">
-               <p className="text-orange-400 text-[10px] font-black uppercase tracking-[0.4em]">Encrypted Line Active</p>
+              <p className="text-orange-400 text-[10px] font-black uppercase tracking-[0.4em]">Encrypted Line Active</p>
             </div>
             <div className="flex flex-col space-y-2">
               <p className="text-slate-400 text-xs italic font-medium">"Focus on authorization before the $775 pitch..."</p>
@@ -297,18 +297,18 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
       <div className="h-44 bg-black/60 backdrop-blur-md border-t border-slate-800 p-6 overflow-y-auto">
         <p className="text-[10px] text-slate-500 font-black uppercase mb-4 tracking-[0.3em] flex items-center">
-           <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 animate-pulse"></span>
-           Live Script Monitor
+          <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 animate-pulse"></span>
+          Live Script Monitor
         </p>
         <div className="space-y-4">
           {transcription.length === 0 && (
             <div className="flex items-center space-x-3 text-slate-600 text-xs italic">
-               <div className="flex space-x-1">
-                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite]"></div>
-                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_100ms]"></div>
-                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_200ms]"></div>
-               </div>
-               <p>Waiting for voice input... Start with Step 1.</p>
+              <div className="flex space-x-1">
+                <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite]"></div>
+                <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_100ms]"></div>
+                <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_200ms]"></div>
+              </div>
+              <p>Waiting for voice input... Start with Step 1.</p>
             </div>
           )}
           {transcription.map((line, i) => (
