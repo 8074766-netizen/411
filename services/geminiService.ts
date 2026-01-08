@@ -3,8 +3,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { COMPANY_MANUAL, COMPANY_NAME } from "../constants";
 
 export const getKnowledgeResponse = async (query: string, history: any[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+
   // Filter out system messages and ensure roles are 'user' or 'model'
   const processedHistory = history
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -40,14 +40,14 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
 };
 
 export const getSalesFeedback = async (transcript: string, persona: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: [
-      { 
-        role: 'user', 
-        parts: [{ 
+      {
+        role: 'user',
+        parts: [{
           text: `Evaluate the following sales call transcript based on the 411 SMART SEARCH.CA 2024 SCRIPT.
           
           Persona Pitched: ${persona.name} (${persona.role} at ${persona.company}). 
@@ -70,8 +70,8 @@ export const getSalesFeedback = async (transcript: string, persona: any) => {
           Transcript:
           ${transcript}
           
-          Provide a detailed professional evaluation in JSON format.` 
-        }] 
+          Provide a detailed professional evaluation in JSON format.`
+        }]
       }
     ],
     config: {
@@ -91,7 +91,7 @@ export const getSalesFeedback = async (transcript: string, persona: any) => {
       }
     }
   });
-  
+
   const text = response.text;
   if (!text) throw new Error("Empty response from model");
   return JSON.parse(text);

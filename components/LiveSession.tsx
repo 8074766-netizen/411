@@ -17,7 +17,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   const [showLeadInfo, setShowLeadInfo] = useState(true);
   const [transcription, setTranscription] = useState<string[]>([]);
   const transcriptRef = useRef<string[]>([]);
-  
+
   const audioContextsRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
   const sessionRef = useRef<any>(null);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
@@ -37,9 +37,9 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   useEffect(() => {
     const initSession = async () => {
       try {
-        const apiKey = process.env.API_KEY;
+        const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
-          console.error("API Key missing from environment.");
+          console.error("API Key missing from environment. Add GEMINI_API_KEY to .env or Vercel.");
           return;
         }
 
@@ -56,7 +56,6 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               setIsActive(true);
               const source = inputCtx.createMediaStreamSource(stream);
               const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
-              
               scriptProcessor.onaudioprocess = (e) => {
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
@@ -64,7 +63,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
                   session.sendRealtimeInput({ media: pcmBlob });
                 });
               };
-              
+
               source.connect(scriptProcessor);
               scriptProcessor.connect(inputCtx.destination);
             },
@@ -167,21 +166,21 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <button 
+          <button
             onClick={() => setShowLeadInfo(!showLeadInfo)}
             className={`px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 ${showLeadInfo ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300'}`}
           >
             <span>🏢</span>
             <span className="hidden sm:inline">Lead Info</span>
           </button>
-          <button 
+          <button
             onClick={() => setShowScript(!showScript)}
             className={`px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 ${showScript ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
           >
             <span>📄</span>
             <span className="hidden sm:inline">Script</span>
           </button>
-          <button 
+          <button
             onClick={endSession}
             disabled={isEnding}
             className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl text-sm font-black shadow-lg shadow-red-900/40 transition-all flex items-center space-x-2 active:scale-95 ml-2"
@@ -196,33 +195,33 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         {/* Left Side: Lead Data (CRM View) */}
         {showLeadInfo && (
           <div className="w-72 bg-slate-800/80 border-r border-slate-700 p-5 overflow-y-auto animate-in slide-in-from-left duration-300">
-             <div className="flex items-center justify-between mb-4">
-               <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Prospect Details</h4>
-               <span className="bg-slate-900 text-[8px] px-2 py-0.5 rounded text-slate-500 font-bold">CRM ID: {persona.id.toUpperCase()}</span>
-             </div>
-             
-             <div className="space-y-5">
-               <div className="space-y-1">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase">Business Name</p>
-                 <p className="text-sm font-bold text-white">{persona.company}</p>
-               </div>
-               <div className="space-y-1">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase">Address</p>
-                 <p className="text-xs text-slate-200">{persona.address}</p>
-                 <p className="text-xs text-slate-200">{persona.city}, {persona.province}</p>
-                 <p className="text-xs text-slate-200">{persona.postalCode}</p>
-               </div>
-               <div className="space-y-1">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase">Phone Number</p>
-                 <p className="text-sm font-mono font-bold text-orange-400">{persona.phone}</p>
-               </div>
-               <div className="pt-4 border-t border-slate-700/50">
-                 <p className="text-[9px] text-slate-500 font-bold uppercase mb-2">Internal Notes</p>
-                 <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                   {persona.personality}
-                 </p>
-               </div>
-             </div>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Prospect Details</h4>
+              <span className="bg-slate-900 text-[8px] px-2 py-0.5 rounded text-slate-500 font-bold">CRM ID: {persona.id.toUpperCase()}</span>
+            </div>
+
+            <div className="space-y-5">
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-500 font-bold uppercase">Business Name</p>
+                <p className="text-sm font-bold text-white">{persona.company}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-500 font-bold uppercase">Address</p>
+                <p className="text-xs text-slate-200">{persona.address}</p>
+                <p className="text-xs text-slate-200">{persona.city}, {persona.province}</p>
+                <p className="text-xs text-slate-200">{persona.postalCode}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-500 font-bold uppercase">Phone Number</p>
+                <p className="text-sm font-mono font-bold text-orange-400">{persona.phone}</p>
+              </div>
+              <div className="pt-4 border-t border-slate-700/50">
+                <p className="text-[9px] text-slate-500 font-bold uppercase mb-2">Internal Notes</p>
+                <p className="text-[10px] text-slate-400 italic bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                  {persona.personality}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -292,7 +291,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
           ))}
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 
