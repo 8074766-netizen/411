@@ -18,6 +18,12 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   const [transcription, setTranscription] = useState<string[]>([]);
   const [audioLevel, setAudioLevel] = useState(0);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [sessionLogs, setSessionLogs] = useState<string[]>([]);
+
+  const addLog = useCallback((msg: string) => {
+    console.log(`[SessionLog] ${msg}`);
+    setSessionLogs(prev => [...prev.slice(-19), msg]);
+  }, []);
 
   const transcriptRef = useRef<string[]>([]);
   const audioContextsRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
@@ -52,8 +58,10 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
     const initSession = async () => {
       try {
+        addLog("Requesting microphone access...");
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
+        addLog("Initializing AudioContext...");
         const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         audioContextsRef.current = { input: inputCtx, output: outputCtx };
@@ -61,18 +69,26 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         if (inputCtx.state === 'suspended') await inputCtx.resume();
         if (outputCtx.state === 'suspended') await outputCtx.resume();
 
+        addLog("Connecting to Gemini Live API...");
         const session = await ai.live.connect({
           model: 'gemini-2.0-flash-exp',
           callbacks: {
             onopen: () => {
-              console.log('Gemini Live: Connection opened');
+              addLog("Gemini Live: Connection established!");
               if (isMounted) {
                 setIsActive(true);
                 setConnectionError(null);
+
+                // Forced greeting to check if AI can respond to text
+                addLog("Sending initial greeting...");
+                (session as any).send([{ text: "Hello! I am ready to start the sales call now. Please identify yourself." }]);
               }
             },
             onmessage: async (message) => {
-              console.log('Gemini Live: Message received', message);
+              const content = message.serverContent;
+              if (content?.modelTurn) addLog("Gemini Live: Receiving AI audio/text...");
+              if (content?.turnComplete) addLog("Gemini Live: Turn completed.");
+
               if (message.serverContent?.outputTranscription) {
                 currentTurnTranscriptRef.current.model += message.serverContent.outputTranscription.text;
               } else if (message.serverContent?.inputTranscription) {
@@ -106,19 +122,21 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               }
 
               if (message.serverContent?.interrupted) {
+                addLog("Gemini Live: Audio interrupted.");
                 stopAllAudio();
                 nextStartTimeRef.current = 0;
               }
             },
             onerror: (e) => {
+              addLog(`Gemini Live Error: ${JSON.stringify(e)}`);
               console.error('Gemini Live: Error', e);
               if (isMounted) {
-                setIsActive(false);
-                setConnectionError("AI connection error. Check API key or connection.");
+                setIsActive(true); // Keep UI active but show error
+                setConnectionError("AI connection error. Check console for details.");
               }
             },
             onclose: (e) => {
-              console.log('Gemini Live: Connection closed', e);
+              addLog("Gemini Live: Connection closed.");
               if (isMounted) setIsActive(false);
             },
           },
@@ -129,16 +147,16 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
             },
             systemInstruction: `You are acting as ${persona.name}, ${persona.role} at ${persona.company}.
             ${persona.personality}
-            
+
             DIRECTIONS:
-            1. Respond naturally to audio input.
+            1. Respond naturally to audio and text input.
             2. Be professional and ready for a sales call.
             3. Context: ${COMPANY_MANUAL}.`
           },
         });
 
         sessionRef.current = session;
-        console.log('Gemini Live: Session object ready');
+        addLog("Session ready for microphone input.");
 
         // Setup microphone strictly AFTER session is set
         const source = inputCtx.createMediaStreamSource(stream);
@@ -164,9 +182,10 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
         source.connect(scriptProcessor);
         scriptProcessor.connect(inputCtx.destination);
-        console.log('Gemini Live: Microphone stream attached and active');
+        addLog("Microphone streaming active.");
 
       } catch (err: any) {
+        addLog(`Init Failed: ${err.message}`);
         console.error("Failed to start session:", err);
         if (isMounted) setConnectionError(err.message || "Microphone access failed.");
       }
@@ -348,24 +367,39 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
         )}
       </div>
 
-      <div className="h-44 bg-black/60 backdrop-blur-md border-t border-slate-800 p-6 overflow-y-auto">
-        <p className="text-[10px] text-slate-500 font-black uppercase mb-4 tracking-[0.3em] flex items-center">
-          <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 animate-pulse"></span>
-          Live Script Monitor
-        </p>
-        <div className="space-y-4">
-          {transcription.length === 0 && (
+      <div className="h-44 bg-black/60 backdrop-blur-md border-t border-slate-800 p-6 overflow-hidden flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] flex items-center">
+            <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 animate-pulse"></span>
+            Real-Time Monitor
+          </p>
+          <p className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
+            {isActive ? 'Session Streaming' : 'Ready to Connect'}
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+          {transcription.length === 0 && sessionLogs.length === 0 && (
             <div className="flex items-center space-x-3 text-slate-600 text-xs italic">
               <div className="flex space-x-1">
                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite]"></div>
                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_100ms]"></div>
                 <div className="w-1 h-3 bg-slate-700 rounded-full animate-[bounce_1s_infinite_200ms]"></div>
               </div>
-              <p>Waiting for voice input... Start with Step 1.</p>
+              <p>Initializing connection stream...</p>
             </div>
           )}
+
+          {/* Diagnostic Logs */}
+          {sessionLogs.map((log, i) => (
+            <div key={`log-${i}`} className="text-[9px] font-mono text-slate-500 border-l border-slate-700 pl-3 leading-tight animate-in slide-in-from-left-2 fade-in duration-300">
+              <span className="text-slate-700 mr-2">[{new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span> {log}
+            </div>
+          ))}
+
+          {/* Actual Transcription */}
           {transcription.map((line, i) => (
-            <div key={i} className="text-sm border-l-2 border-orange-500/30 pl-4 py-2 bg-white/5 rounded-r-xl transition-all hover:bg-white/10">
+            <div key={`trans-${i}`} className="text-sm border-l-2 border-orange-500/30 pl-4 py-2 bg-white/5 rounded-r-xl transition-all hover:bg-white/10">
               {line.split('\n').map((l, idx) => (
                 <p key={idx} className={l.startsWith('Rep:') ? 'text-blue-300 font-medium' : 'text-slate-100 font-bold italic'}>
                   {l}
