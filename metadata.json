@@ -1,0 +1,7 @@
+{
+  "name": "411 Smart Search Trainer",
+  "description": "An advanced sales training platform for 411smartsearch.ca featuring AI-powered roleplay simulations, real-time voice interaction, and a comprehensive knowledge hub for sales representatives.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
