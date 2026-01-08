@@ -35,10 +35,15 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
   };
 
   useEffect(() => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-    
     const initSession = async () => {
       try {
+        const apiKey = process.env.API_KEY;
+        if (!apiKey) {
+          console.error("API Key missing from environment.");
+          return;
+        }
+
+        const ai = new GoogleGenAI({ apiKey });
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });

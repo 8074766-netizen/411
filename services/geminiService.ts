@@ -2,9 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { COMPANY_MANUAL, COMPANY_NAME } from "../constants";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export const getKnowledgeResponse = async (query: string, history: any[]) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   // Filter out system messages and ensure roles are 'user' or 'model'
   const processedHistory = history
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -40,6 +40,8 @@ export const getKnowledgeResponse = async (query: string, history: any[]) => {
 };
 
 export const getSalesFeedback = async (transcript: string, persona: any) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: [
