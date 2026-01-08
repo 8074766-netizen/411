@@ -136,7 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ history }) => {
           </div>
           <div className="mt-8 pt-6 border-t border-slate-800">
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">
-              Certification Goal: 5 Calls at >85% Overall Score.
+              Certification Goal: 5 Calls at {">"}85% Overall Score.
             </p>
           </div>
         </div>
