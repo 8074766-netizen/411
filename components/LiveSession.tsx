@@ -42,7 +42,10 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
 
   useEffect(() => {
     // Create new instance here to ensure fresh session
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY,
+      apiVersion: 'v1alpha'
+    });
     let isMounted = true;
 
     const initSession = async () => {
@@ -62,7 +65,6 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               console.log('Live session connected');
               setIsActive(true);
 
-              // Ensure audio contexts are running
               if (inputCtx.state === 'suspended') await inputCtx.resume();
               if (outputCtx.state === 'suspended') await outputCtx.resume();
 
@@ -70,10 +72,11 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
 
               scriptProcessor.onaudioprocess = (e) => {
-                if (!session) return; // Ensure session is ready before sending audio
+                if (!session) return;
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
-                session.sendRealtimeInput({ media: pcmBlob });
+                // Send as an array of parts
+                session.sendRealtimeInput([pcmBlob]);
               };
 
               source.connect(scriptProcessor);
@@ -94,24 +97,29 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
                 currentTurnTranscriptRef.current = { user: '', model: '' };
               }
 
-              const audioData = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-              if (audioData) {
-                const { output: ctx } = audioContextsRef.current!;
+              const modelTurn = message.serverContent?.modelTurn;
+              if (modelTurn) {
+                for (const part of modelTurn.parts) {
+                  const audioData = part.inlineData?.data;
+                  if (audioData) {
+                    const { output: ctx } = audioContextsRef.current!;
 
-                // Gapless playback logic
-                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-                const buffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
-                const source = ctx.createBufferSource();
-                source.buffer = buffer;
-                source.connect(ctx.destination);
+                    // Gapless playback logic
+                    nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
+                    const buffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
+                    const source = ctx.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(ctx.destination);
 
-                source.addEventListener('ended', () => {
-                  sourcesRef.current.delete(source);
-                });
+                    source.addEventListener('ended', () => {
+                      sourcesRef.current.delete(source);
+                    });
 
-                source.start(nextStartTimeRef.current);
-                nextStartTimeRef.current += buffer.duration;
-                sourcesRef.current.add(source);
+                    source.start(nextStartTimeRef.current);
+                    nextStartTimeRef.current += buffer.duration;
+                    sourcesRef.current.add(source);
+                  }
+                }
               }
 
               if (message.serverContent?.interrupted) {
