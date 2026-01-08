@@ -72,11 +72,17 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
 
               scriptProcessor.onaudioprocess = (e) => {
-                if (!session) return;
+                const currentSession = sessionRef.current;
+                if (!currentSession) return;
+
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
-                // Send as an array of parts
-                session.sendRealtimeInput([pcmBlob]);
+
+                // Send as simple object array (supported shorthand for Blobs in some SDK versions)
+                // or wrap explicitly as Part if needed. Trying explicit first for robustness.
+                currentSession.sendRealtimeInput([{
+                  inlineData: pcmBlob
+                }]);
               };
 
               source.connect(scriptProcessor);
@@ -84,6 +90,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ persona, onEndSession }) => {
               console.log('Microphone stream active');
             },
             onmessage: async (message) => {
+              console.log('AI Message:', message);
               if (message.serverContent?.outputTranscription) {
                 currentTurnTranscriptRef.current.model += message.serverContent.outputTranscription.text;
               } else if (message.serverContent?.inputTranscription) {
